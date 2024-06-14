@@ -1,0 +1,5 @@
+boto3
+Pillow
+numpy
+opencv-python
+scikit-learn
