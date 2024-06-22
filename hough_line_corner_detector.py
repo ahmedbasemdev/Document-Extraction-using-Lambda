@@ -27,6 +27,9 @@ class HoughLineCornerDetector:
         # Step 2: Get hough lines
         self._lines = self._get_hough_lines()
 
+        if self._lines is None :
+            return None
+
         # Step 3: Get intersection points
         self._intersections = self._get_intersections()
 
@@ -41,14 +44,15 @@ class HoughLineCornerDetector:
             np.pi / self.theta_acc, 
             self.thresh
         )
-        if self.output_process: self._draw_hough_lines(lines)
-        
+        if lines is None or len(lines) == 0:
+            return None
+        else:
+            if self.output_process: self._draw_hough_lines(lines)
         return lines
 
     
     def _draw_hough_lines(self, lines):
         hough_line_output = self._get_color_image()
-
         for line in lines:
             rho, theta = line[0]
             a, b = np.cos(theta), np.sin(theta)

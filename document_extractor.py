@@ -22,7 +22,9 @@ class PageExtractor:
             self._processed = preprocessor(self._processed)
 
         self._intersections = self._corner_detector(self._processed)
-
+        print(self._intersections)
+        if self._intersections == None :
+            return self._image
         # Step 3: Deskew and extract page
         return self._extract_page()
 
@@ -127,5 +129,5 @@ def extract_document(file_path, file_name):
     binary_image_adaptive = cv2.adaptiveThreshold(gray_image, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
                                               cv2.THRESH_BINARY, 11, 2)
 
-    cv2.imwrite(f"/tmp/{file_name}", binary_image_adaptive)
+    cv2.imwrite(f"tmp/{file_name}", binary_image_adaptive)
     return True
