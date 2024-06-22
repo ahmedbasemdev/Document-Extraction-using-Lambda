@@ -111,6 +111,22 @@ class PageExtractor:
         # return the ordered coordinates
         return rect
 
+from PIL import Image
+import io
+import PIL
+
+def compress_image(image):
+    # Convert the image to RGB mode (if not already)
+    image = Image.fromarray(image)
+    
+    image_height = int(image.height / 2)
+    image_width = int(image.width / 2)
+    image = image.resize((image_width,image_height), PIL.Image.NEAREST)
+
+    return image
+
+# Example usage:
+
 def extract_document(file_path, file_name):
     page_extractor = PageExtractor(
     preprocessors = [
@@ -125,9 +141,12 @@ def extract_document(file_path, file_name):
             )
         )
     extracted = page_extractor(file_path)
-    gray_image = cv2.cvtColor(extracted, cv2.COLOR_BGR2GRAY)
+    compressed_image = compress_image(extracted)
+    compressed_image = np.array(compressed_image)
+    gray_image = cv2.cvtColor(compressed_image, cv2.COLOR_BGR2GRAY)
     binary_image_adaptive = cv2.adaptiveThreshold(gray_image, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
                                               cv2.THRESH_BINARY, 11, 2)
 
     cv2.imwrite(f"tmp/{file_name}", binary_image_adaptive)
     return True
+
