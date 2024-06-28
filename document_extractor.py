@@ -37,7 +37,9 @@ def find_dest(pts):
  
     return order_points(destination_corners)
 
-def extract_document(img, file_name):
+def extract_document(img_path, file_name):
+    img = cv2.imread(img_path)
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     # Resize image to workable size
     dim_limit = 2160
     max_dim = max(img.shape)
