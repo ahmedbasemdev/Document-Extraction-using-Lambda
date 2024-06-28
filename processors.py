@@ -51,15 +51,16 @@ class Resizer:
     -------
     Resized image
     """
-    def __init__(self, height = 1280, output_process = False):
-        self._height = height
+    def __init__(self, output_process = False):
+        #self._height = height
         self.output_process = output_process
 
 
     def __call__(self, image):
+        self._height = int(image.shape[0] / 2.5)
         if image.shape[0] <= self._height: return image
         ratio = round(self._height / image.shape[0], 3)
-        width = int(image.shape[1] * ratio)
+        width = int(image.shape[1] / 2.5)
         dim = (width, self._height)
         resized = cv2.resize(image, dim, interpolation = cv2.INTER_AREA) 
         if self.output_process: cv2.imwrite('output/resized.jpg', resized)

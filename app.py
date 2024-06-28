@@ -13,7 +13,7 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 # S3 bucket name
-BUCKET_NAME = "document-extraction-2001"
+BUCKET_NAME = "document-extraction-bucket"
 
 def lambda_handler(event, context):
     logger.info("Started processing the event")
