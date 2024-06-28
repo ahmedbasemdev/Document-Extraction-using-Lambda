@@ -95,8 +95,10 @@ def extract_document(img_path, file_name):
     # Perspective transform using homography.
     final = cv2.warpPerspective(orig_img, M, (destination_corners[2][0], destination_corners[2][1]),
                                 flags=cv2.INTER_LINEAR)
+    
     gray_image = cv2.cvtColor(final, cv2.COLOR_BGR2GRAY)
     _, binary = cv2.threshold(gray_image, 127, 255, cv2.THRESH_BINARY)
+
     cv2.imwrite(f"/tmp/{file_name}", binary)
 
     return True
