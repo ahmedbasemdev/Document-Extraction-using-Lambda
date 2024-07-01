@@ -1,104 +1,150 @@
 import cv2
 import numpy as np
-import matplotlib.pyplot as plt
+from hough_line_corner_detector import HoughLineCornerDetector
+from processors import Resizer, OtsuThresholder, FastDenoiser
 
-def order_points(pts):
-    '''Rearrange coordinates to order:
-      top-left, top-right, bottom-right, bottom-left'''
-    rect = np.zeros((4, 2), dtype='float32')
-    pts = np.array(pts)
-    s = pts.sum(axis=1)
-    # Top-left point will have the smallest sum.
-    rect[0] = pts[np.argmin(s)]
-    # Bottom-right point will have the largest sum.
-    rect[2] = pts[np.argmax(s)]
- 
-    diff = np.diff(pts, axis=1)
-    # Top-right point will have the smallest difference.
-    rect[1] = pts[np.argmin(diff)]
-    # Bottom-left will have the largest difference.
-    rect[3] = pts[np.argmax(diff)]
-    # Return the ordered coordinates.
-    return rect.astype('int').tolist()
 
-def find_dest(pts):
-    (tl, tr, br, bl) = pts
-    # Finding the maximum width.
-    widthA = np.sqrt(((br[0] - bl[0]) ** 2) + ((br[1] - bl[1]) ** 2))
-    widthB = np.sqrt(((tr[0] - tl[0]) ** 2) + ((tr[1] - tl[1]) ** 2))
-    maxWidth = max(int(widthA), int(widthB))
- 
-    # Finding the maximum height.
-    heightA = np.sqrt(((tr[0] - br[0]) ** 2) + ((tr[1] - br[1]) ** 2))
-    heightB = np.sqrt(((tl[0] - bl[0]) ** 2) + ((tl[1] - bl[1]) ** 2))
-    maxHeight = max(int(heightA), int(heightB))
-    # Final destination co-ordinates.
-    destination_corners = [[0, 0], [maxWidth, 0], [maxWidth, maxHeight], [0, maxHeight]]
- 
-    return order_points(destination_corners)
+class PageExtractor:
+    def __init__(self, preprocessors, corner_detector, output_process = True):
+        assert isinstance(preprocessors, list), "List of processors expected"
+        self._preprocessors = preprocessors
+        self._corner_detector = corner_detector
+        self.output_process = True
 
-def extract_document(img_path, file_name):
-    img = cv2.imread(img_path)
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    # Resize image to workable size
-    dim_limit = 2160
-    max_dim = max(img.shape)
-    if max_dim > dim_limit:
-        resize_scale = dim_limit / max_dim
-        img = cv2.resize(img, None, fx=resize_scale, fy=resize_scale)
-    # Create a copy of resized original image for later use
-    orig_img = img.copy()
-    # Repeated Closing operation to remove text from the document.
-    kernel = np.ones((5, 5), np.uint8)
-    img = cv2.morphologyEx(img, cv2.MORPH_CLOSE, kernel, iterations=3)
-    # GrabCut
+
+    def __call__(self, image_path):
+        # Step 1: Read image from file
+        self._image = cv2.imread(image_path)
+
+        # Step 2: Preprocess image
+        self._processed = self._image
+        for preprocessor in self._preprocessors:
+            self._processed = preprocessor(self._processed)
+
+        self._intersections = self._corner_detector(self._processed)
+        
+        if self._intersections == None :
+            return self._image
+        # Step 3: Deskew and extract page
+        return self._extract_page()
+
+
+    def _extract_page(self):
+        # obtain a consistent order of the points and unpack them
+        # individually
+        pts = np.array([
+            (x, y)
+            for intersection in self._intersections
+            for x, y in intersection
+        ])
+        rect = self._order_points(pts)
+        (tl, tr, br, bl) = rect
+
+        # compute the width of the new image, which will be the
+        # maximum distance between bottom-right and bottom-left
+        # x-coordiates or the top-right and top-left x-coordinates
+        widthA = np.sqrt(((br[0] - bl[0]) ** 2) + ((br[1] - bl[1]) ** 2))
+        widthB = np.sqrt(((tr[0] - tl[0]) ** 2) + ((tr[1] - tl[1]) ** 2))
+        maxWidth = max(int(widthA), int(widthB))
+
+        # compute the height of the new image, which will be the
+        # maximum distance between the top-right and bottom-right
+        # y-coordinates or the top-left and bottom-left y-coordinates
+        heightA = np.sqrt(((tr[0] - br[0]) ** 2) + ((tr[1] - br[1]) ** 2))
+        heightB = np.sqrt(((tl[0] - bl[0]) ** 2) + ((tl[1] - bl[1]) ** 2))
+        maxHeight = max(int(heightA), int(heightB))
+
+        # now that we have the dimensions of the new image, construct
+        # the set of destination points to obtain a "birds eye view",
+        # (i.e. top-down view) of the image, again specifying points
+        # in the top-left, top-right, bottom-right, and bottom-left
+        # order
+        dst = np.array([
+            [0, 0],                         # Top left point
+            [maxWidth - 1, 0],              # Top right point
+            [maxWidth - 1, maxHeight - 1],  # Bottom right point
+            [0, maxHeight - 1]],            # Bottom left point
+            dtype = "float32"               # Date type
+        )
+
+        # compute the perspective transform matrix and then apply it
+        M = cv2.getPerspectiveTransform(rect, dst)
+        warped = cv2.warpPerspective(self._processed, M, (maxWidth, maxHeight))
+
+        if self.output_process: cv2.imwrite('output/deskewed.jpg', warped)
+
+        # return the warped image
+        return warped
+
+
+    def _order_points(self, pts):
+        """
+        Function for getting the bounding box points in the correct
+        order
+
+        Params
+        pts     The points in the bounding box. Usually (x, y) coordinates
+
+        Returns
+        rect    The ordered set of points
+        """
+        # initialzie a list of coordinates that will be ordered such that
+        # 1st point -> Top left
+        # 2nd point -> Top right
+        # 3rd point -> Bottom right
+        # 4th point -> Bottom left
+        rect = np.zeros((4, 2), dtype = "float32")
+
+        # the top-left point will have the smallest sum, whereas
+        # the bottom-right point will have the largest sum
+        s = pts.sum(axis = 1)
+        rect[0] = pts[np.argmin(s)]
+        rect[2] = pts[np.argmax(s)]
+
+        # now, compute the difference between the points, the
+        # top-right point will have the smallest difference,
+        # whereas the bottom-left will have the largest difference
+        diff = np.diff(pts, axis = 1)
+        rect[1] = pts[np.argmin(diff)]
+        rect[3] = pts[np.argmax(diff)]
+
+        # return the ordered coordinates
+        return rect
+
+from PIL import Image
+import io
+import PIL
+
+def compress_image(image):
+    # Convert the image to RGB mode (if not already)
+    image = Image.fromarray(image)
     
-    mask = np.zeros(img.shape[:2], np.uint8)
-    bgdModel = np.zeros((1, 65), np.float64)
-    fgdModel = np.zeros((1, 65), np.float64)
-    rect = (20, 20, img.shape[1] - 20, img.shape[0] - 20)
-    cv2.grabCut(img, mask, rect, bgdModel, fgdModel, 5, cv2.GC_INIT_WITH_RECT)
-    mask2 = np.where((mask == 2) | (mask == 0), 0, 1).astype('uint8')
-    img = img * mask2[:, :, np.newaxis]
+    image_height = int(image.height / 2)
+    image_width = int(image.width / 2)
+    image = image.resize((image_width,image_height), PIL.Image.NEAREST)
 
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    gray = cv2.GaussianBlur(gray, (11, 11), 0)
-    # Edge Detection.
-    canny = cv2.Canny(gray, 0, 200)
-    canny = cv2.dilate(canny, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5)))
-    # Finding contours for the detected edges.
-    contours, hierarchy = cv2.findContours(canny, cv2.RETR_LIST, cv2.CHAIN_APPROX_NONE)
-    # Keeping only the largest detected contour.
-    page = sorted(contours, key=cv2.contourArea, reverse=True)[:5]
- 
-    # Detecting Edges through Contour approximation.
-    # Loop over the contours.
-    if len(page) == 0:
-        return orig_img
-    for c in page:
-        # Approximate the contour.
-        epsilon = 0.02 * cv2.arcLength(c, True)
-        corners = cv2.approxPolyDP(c, epsilon, True)
-        # If our approximated contour has four points.
-        if len(corners) == 4:
-            break
-    # Sorting the corners and converting them to desired shape.
-    corners = sorted(np.concatenate(corners).tolist())
-    # For 4 corner points being detected.
-    corners = order_points(corners)
- 
-    destination_corners = find_dest(corners)
- 
-    h, w = orig_img.shape[:2]
-    # Getting the homography.
-    M = cv2.getPerspectiveTransform(np.float32(corners), np.float32(destination_corners))
-    # Perspective transform using homography.
-    final = cv2.warpPerspective(orig_img, M, (destination_corners[2][0], destination_corners[2][1]),
-                                flags=cv2.INTER_LINEAR)
-    
-    gray_image = cv2.cvtColor(final, cv2.COLOR_BGR2GRAY)
+    return image
+
+# Example usage:
+
+def extract_document(file_path, file_name):
+    page_extractor = PageExtractor(
+    preprocessors = [
+        Resizer(height = 1280, output_process = True),
+        FastDenoiser(strength = 9, output_process = True),
+    ],
+    corner_detector = HoughLineCornerDetector(
+        rho_acc = 1,
+        theta_acc = 180,
+        thresh = 100,
+        output_process = True
+            )
+        )
+    extracted = page_extractor(file_path)
+    gray_image = cv2.cvtColor(extracted, cv2.COLOR_BGR2GRAY)
     _, binary = cv2.threshold(gray_image, 127, 255, cv2.THRESH_BINARY)
 
-    cv2.imwrite(f"/tmp/{file_name}", binary)
 
+    cv2.imwrite(f"/tmp/{file_name}", binary)
     return True
+
